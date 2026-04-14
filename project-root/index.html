@@ -94,9 +94,6 @@
         iframe.contentWindow.postMessage({ type: "startSimulation" }, "*");
 
         showsim(); // show the first angle
-        
-        //test
-        game_over(true, false);
 
         window.addEventListener("message", function(event) {
             if (event.data.type === "simulationCompleted") {
