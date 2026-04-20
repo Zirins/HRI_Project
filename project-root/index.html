@@ -4,9 +4,6 @@
 <title>Camera Placement Study</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="style.css">
-<style>
-</style>
-<script src=""></script>
 <body>
 
 <div class="top">
@@ -20,7 +17,7 @@
         <h1>Welcome to the Camera Placement Study!</h1>
         <p>In this study, you will be teleoperating a robot in a simulated environment. Your task is to pick up an object and place it into a bin while using different camera angles. After each trial, you will be asked to fill out a survey about your experience with that camera angle.</p>
         <p style="font-weight: bold; font-size: large;">User controls:</p>
-        <div class ="controls" style="text-align: left; justify-self: center;">
+        <div class="controls" style="text-align: left; justify-self: center;">
             <dl>
                 <dt><span style="font-weight: bold;">W:</span> Moves the robot arm forward</dt>
                 <dt><span style="font-weight: bold;">S:</span> Moves the robot arm backward</dt>
@@ -45,6 +42,10 @@
 </div>
 
 <script>
+    // config for spreadsheet 
+    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz6nSF-w9YmGOiAVAQ5zAhr6N7P9jcCAYcBAv6ZNQxcJW_JcwtVOcGf0FvIy2IVDCEJ0g/exec";
+    const sessionId = crypto.randomUUID();
+
     var angles = [
         ["Front Camera", "https://docs.google.com/forms/d/e/1FAIpQLScZpYZ0GlCrN1kGhqnSFG6RIDBIpD1GRSVyATczgaSKB3Q0CA/viewform"], 
         ["Back Camera", "https://docs.google.com/forms/d/e/1FAIpQLSfMvVpNiMpyQPQiaZB8Jr_wu6cL98CPc5XyUVCVOk7zZv10KQ/viewform"],
@@ -54,15 +55,12 @@
     ];
     var randAngles = shuffle(angles);
     var currentAngle = null;
-    var completed = false;
-    var timeout = false;
     var all_done = false;
 
+    // --- Functions ---
     function shuffle(array) {
         for (let i = array.length - 1; i > 0; i--) {
-            // Generate a random index from 0 to i
             const j = Math.floor(Math.random() * (i + 1));
-            // Swap elements at i and j
             [array[i], array[j]] = [array[j], array[i]];
         }
         return array;
@@ -71,55 +69,77 @@
     function showsim() {
         if (randAngles.length > 0) {
             currentAngle = randAngles.pop();
-        }
-        else {
+        } else {
             currentAngle = [
                 "Choice",
                 "https://docs.google.com/forms/d/e/1FAIpQLSdiqrY3Uj1ha-JrHxslO9qS9Aw7Fi6414RJKlUKBMIhPVSotA/viewform"
-            ]
+            ];
             all_done = true;
         }
         document.getElementById("CurrAngle").textContent = "Current Angle: " + currentAngle[0];
-        // Send angle to Unity simulation
         var iframe = document.querySelector("iframe");
         iframe.contentWindow.postMessage({ type: "setCameraAngle", angle: currentAngle[0] }, "*");
     }
 
     function startsim() {
-        document.querySelector(".start-modal").style.display = "none"; // hide the start modal
-        document.querySelector(".Unity").style.display = "grid"; // show the Unity simulation container
+        document.querySelector(".start-modal").style.display = "none";
+        document.querySelector(".Unity").style.display = "grid";
 
-        // Start the simulation and set up event listeners for completion and timeout
         var iframe = document.querySelector("iframe");
         iframe.contentWindow.postMessage({ type: "startSimulation" }, "*");
 
-        showsim(); // show the first angle
+        showsim();
 
-        window.addEventListener("message", function(event) {
+        window.addEventListener("message", async function(event) {
             if (event.data.type === "simulationCompleted") {
-                completed = true;
-                game_over(completed, timeout);
+                await logMetrics({
+                    completionTime: event.data.completionTime,
+                    collisions: event.data.collisions,
+                    success: true
+                });
+                game_over(false); // false = not a timeout
+
             } else if (event.data.type === "simulationTimeout") {
-                completed = timeout = true;
-                game_over(completed, timeout);
+                await logMetrics({
+                    completionTime: event.data.completionTime,
+                    collisions: event.data.collisions,
+                    success: false
+                });
+                game_over(true); // true = timeout
             }
         });
     }
-    
-    function game_over(completed, timeout) {
-        if (completed) {
-            if (timeout) {
-                alert("Time's up! Thank you for playing.");
-            } else {
-                alert("Task completed successfully!");
-            }
-            // alert("Please fill out the survey for this angle: \n" + currentAngle[1]);
-            prompt("Please fill out the survey for this angle and enter the survey code displayed after submission: \n" + currentAngle[1]);
-            completed = false; // reset completed for next trial
-            timeout = false; // reset timeout for next trial
-            if (!all_done) {
-                showsim(); 
-            }
+
+    async function logMetrics(metrics) {
+        const payload = {
+            sessionId: sessionId,
+            cameraCondition: currentAngle[0],
+            completionTime: metrics.completionTime,
+            success: metrics.success,
+            collisions: metrics.collisions
+        };
+        try {
+            await fetch(APPS_SCRIPT_URL, {
+                method: "POST",
+                mode: "no-cors",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            console.log("Metrics logged:", payload);
+        } catch(err) {
+            console.error("Failed to log metrics:", err);
+        }
+    }
+
+    function game_over(isTimeout) {
+        if (isTimeout) {
+            alert("Time's up! Thank you for playing.");
+        } else {
+            alert("Task completed successfully!");
+        }
+        prompt("Please fill out the survey for this angle and enter the survey code displayed after submission: \n" + currentAngle[1]);
+        if (!all_done) {
+            showsim();
         }
     }
 
